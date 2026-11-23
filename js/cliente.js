@@ -27,6 +27,69 @@ const categoriaDe = l => {
   return c ? c[0] : 'Outros';
 };
 
+// Cardápio de fallback quando a loja ainda não tem itens cadastrados no banco
+function gerarCardapioDemo(loja) {
+  const baseId = `demo-${loja.id}`;
+  const nomeLoja = (loja.name || '').toLowerCase();
+
+  if (nomeLoja.includes('bora comer')) {
+    return [
+      {
+        id: `${baseId}-1`,
+        name: 'Combo Bora Comer Clássico',
+        description: 'Hambúrguer artesanal grelhado, queijo cheddar, alface, tomate, molho da casa e fritas.',
+        price: 32.90,
+        image_url: ''
+      },
+      {
+        id: `${baseId}-2`,
+        name: 'Duplo Bacon Smash',
+        description: 'Dois blends smash na chapa, bacon crocante, cheddar duplo e pão brioche amanteigado.',
+        price: 36.50,
+        image_url: ''
+      },
+      {
+        id: `${baseId}-3`,
+        name: 'Porção de Batata com Cheddar e Bacon',
+        description: 'Batatas crocantes cobertas com creme de cheddar quente e cubos de bacon.',
+        price: 22.00,
+        image_url: ''
+      },
+      {
+        id: `${baseId}-4`,
+        name: 'Refrigerante Lata 350ml',
+        description: 'Bem gelado (Coca-Cola, Guaraná ou Zero).',
+        price: 6.50,
+        image_url: ''
+      }
+    ];
+  }
+
+  return [
+    {
+      id: `${baseId}-1`,
+      name: 'Prato Especial da Casa',
+      description: 'Preparo artesanal da casa com ingredientes selecionados e acompanhamento.',
+      price: 29.90,
+      image_url: ''
+    },
+    {
+      id: `${baseId}-2`,
+      name: 'Porção de Entrada',
+      description: 'Porção ideal para compartilhar com molho especial da casa.',
+      price: 18.50,
+      image_url: ''
+    },
+    {
+      id: `${baseId}-3`,
+      name: 'Bebida Gelada 350ml',
+      description: 'Opção refrescante para acompanhar seu pedido.',
+      price: 6.00,
+      image_url: ''
+    }
+  ];
+}
+
 // ---------- Sessão no cabeçalho ----------
 (async () => {
   try {
@@ -217,6 +280,8 @@ async function abrirLoja(id) {
   if (!l) return;
 
   let itens = [];
+  let usandoDemo = false;
+
   try {
     const { data, error } = await db
       .from('menu_items')
@@ -231,6 +296,11 @@ async function abrirLoja(id) {
     console.warn('Falha ao buscar itens:', err);
   }
 
+  if (!itens.length) {
+    itens = gerarCardapioDemo(l);
+    usandoDemo = true;
+  }
+
   itens.forEach(i => {
     itensCache[i.id] = { ...i, loja: l };
   });
@@ -240,10 +310,9 @@ async function abrirLoja(id) {
     <h3>${esc(l.name)}</h3>
     ${l.description ? `<p>${esc(l.description)}</p>` : ''}
     ${l.address ? `<p><small>📍 ${esc(l.address)}</small></p>` : ''}
+    ${usandoDemo ? `<p><small>Cardápio demonstrativo exibido enquanto não há itens cadastrados no banco.</small></p>` : ''}
     <div class="menu-lista">
-      ${itens.length
-        ? itens.map(htmlItem).join('')
-        : '<p>Este restaurante ainda não tem itens cadastrados no cardápio.</p>'}
+      ${itens.map(htmlItem).join('')}
     </div>
     <div class="acoes">
       <button type="button" id="btnQrLoja">QR Code da loja</button>
