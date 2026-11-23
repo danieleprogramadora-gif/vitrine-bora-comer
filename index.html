@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Encontre restaurantes, veja cardápios e faça seu pedido.">
+  <title>Bora Comer | Restaurantes e Cardápios</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="mercado">
+  <header>
+    <h1 class="brand"><span class="brand-mark">V</span>vitrine</h1>
+    <nav>
+      <a href="#descobrir">Descobrir</a>
+      <a href="#restaurantes">Restaurantes</a>
+      <a href="cadastro.html" id="linkVender">Quero vender</a>
+    </nav>
+    <div class="header-actions">
+      <span id="areaConta"><a href="login.html">Entrar</a></span>
+      <button type="button" id="btnSacola">Sacola <span id="contSacola">0</span></button>
+    </div>
+  </header>
+
+  <main class="container">
+    <div id="descobrir" class="bloco-topo">
+      <div>
+        <small class="rotulo">Encontre seu sabor</small>
+        <h2>O que vai ser hoje?</h2>
+      </div>
+      <a href="#restaurantes">Explorar restaurantes →</a>
+    </div>
+
+    <div class="busca-linha">
+      <input type="search" id="pesquisa" placeholder="Busque restaurante ou comida" aria-label="Pesquisar restaurantes">
+      <button type="button" id="btnBuscar">Buscar</button>
+    </div>
+
+    <div class="categorias" id="categorias">
+      <button type="button" class="cat ativa" data-cat="Todos"><span class="cat-icone">🍽️</span><span class="cat-nome">Todos</span></button>
+      <button type="button" class="cat" data-cat="Hambúrgueres"><span class="cat-icone">🍔</span><span class="cat-nome">Hambúrgueres</span></button>
+      <button type="button" class="cat" data-cat="Pizzas"><span class="cat-icone">🍕</span><span class="cat-nome">Pizzas</span></button>
+      <button type="button" class="cat" data-cat="Japonesa"><span class="cat-icone">🍣</span><span class="cat-nome">Japonesa</span></button>
+      <button type="button" class="cat" data-cat="Saudável"><span class="cat-icone">🥗</span><span class="cat-nome">Saudável</span></button>
+      <button type="button" class="cat" data-cat="Açaí"><span class="cat-icone">🍇</span><span class="cat-nome">Açaí</span></button>
+    </div>
+
+    <div id="restaurantes" class="bloco-titulo">
+      <h2>Restaurantes para descobrir</h2>
+      <span id="contLojas" class="contagem">0</span>
+    </div>
+
+    <div id="listaLojas" class="cards"></div>
+    <p id="mensagem" class="mensagem" role="status"></p>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/supabase.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/cliente.js"></script>
+</body>
+</html>

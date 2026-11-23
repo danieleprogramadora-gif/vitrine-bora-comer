@@ -1,0 +1,59 @@
+VITRINE - LOJAS E CARDAPIOS | VERSAO COM FRONT-END MODERNO
+
+Como abrir:
+1. Extraia este ZIP.
+2. Abra a pasta Vitrine_Lojas_Cardapios no Visual Studio Code.
+3. Abra index.html com a extensao Live Server.
+4. O navegador precisa de internet para carregar a biblioteca Supabase e as fontes.
+
+Visual:
+- Layout responsivo para computador e celular.
+- Identidade visual empresarial em azul e branco.
+- Formulários mais claros e organizados.
+- Cartões com melhor espaçamento e hierarquia visual.
+- Área do proprietário dividida em etapas.
+
+Integração:
+- Os arquivos JavaScript e a conexão Supabase foram mantidos.
+- O projeto pressupõe as colunas descritas na versão anterior: stores (id, owner_id, name, description, address, phone, image_url, created_at) e menu_items (id, store_id, name, description, price, image_url, available, created_at).
+- Confirme a estrutura real das tabelas e configure políticas RLS antes de publicar.
+- user_metadata.role serve para direcionamento visual e não deve ser usado como única autorização. Proteja operações no banco com RLS.
+- Nunca coloque a chave service_role no navegador.
+
+
+BUCKET DE IMAGENS - img_comidas
+
+O projeto agora permite selecionar arquivos de imagem no painel do proprietário.
+As imagens são enviadas ao Supabase Storage no bucket chamado exatamente:
+img_comidas
+
+Pastas usadas:
+- lojas/<id-do-proprietario>/
+- itens/<id-da-loja>/
+
+Depois do envio, o projeto obtém a URL pública e grava essa URL na coluna image_url.
+
+Configuracao necessaria no Supabase:
+1. Abra Storage > New bucket.
+2. Crie o bucket com o nome img_comidas.
+3. Para que as imagens apareçam no site por URL pública, marque o bucket como Public.
+4. Configure políticas de Storage para permitir upload somente a usuários autenticados e limitar a gravação às pastas/objetos permitidos. Não deixe upload irrestrito para qualquer pessoa.
+5. Confirme que as políticas RLS das tabelas stores e menu_items continuam protegendo os dados.
+
+Limite no formulário: 5 MB por imagem. Formatos aceitos: JPG, PNG, WEBP e GIF.
+
+
+ATENCAO - PASTA js
+Copie para esta pasta a sua pasta "js" original (supabase.js, auth.js, cliente.js, proprietario.js).
+Ela nao foi alterada: este redesign mexeu apenas em css/style.css.
+
+Estrutura final:
+Vitrine_Lojas_Cardapios/
+  index.html, login.html, cadastro.html, cliente.html, proprietario.html
+  css/style.css
+  js/supabase.js, js/auth.js, js/cliente.js, js/proprietario.js   <- sua pasta original
+
+PEDIDOS (estilo pizzaria)
+Em cliente.html, cada cardapio tem botoes + e - para montar o pedido. A barra inferior mostra o total
+e "Ver pedido" abre o fechamento (nome, entrega/retirada, endereco, pagamento, troco, observacoes).
+O pedido e enviado por WhatsApp ao telefone cadastrado na loja (com DDD). Nao precisa de tabela nova.
