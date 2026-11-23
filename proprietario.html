@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Painel do proprietário | Vitrine</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header>
+    <h1 class="brand"><span class="brand-mark">V</span>vitrine <span style="font:500 13px 'DM Sans';color:#718096;margin-left:8px">PAINEL</span></h1>
+    <div class="header-actions">
+      <a href="index.html">Página inicial</a>
+      <button type="button" onclick="sair()">Sair da conta</button>
+    </div>
+  </header>
+
+  <main class="container">
+    <div class="page-intro">
+      <h2>Área do proprietário</h2>
+      <p>Gerencie as informações da sua loja e mantenha seu cardápio atualizado.</p>
+    </div>
+
+    <!-- Seção 1: Dados da Loja -->
+    <section>
+      <h2>1. Dados da loja</h2>
+      <p>Informe os dados que os clientes verão na Vitrine.</p>
+      <form id="formLoja">
+        <label for="nomeLoja">Nome da loja</label>
+        <input type="text" id="nomeLoja" placeholder="Ex.: Mercado Central" required>
+
+        <label for="descricaoLoja">Descrição</label>
+        <textarea id="descricaoLoja" placeholder="Descreva sua loja e o que ela oferece"></textarea>
+
+        <label for="enderecoLoja">Endereço</label>
+        <input type="text" id="enderecoLoja" placeholder="Rua, número e bairro">
+
+        <label for="telefoneLoja">Telefone</label>
+        <input type="text" id="telefoneLoja" placeholder="(00) 00000-0000">
+
+        <label for="imagemLoja">Imagem da loja</label>
+        <input type="file" id="imagemLoja" accept="image/png,image/jpeg,image/webp,image/gif">
+        <small class="ajuda">Envie uma imagem JPG, PNG, WEBP ou GIF (até 5 MB).</small>
+
+        <button type="submit">Salvar dados da loja</button>
+      </form>
+    </section>
+
+    <!-- Seção 2: Itens do Cardápio -->
+    <section>
+      <h2>2. Itens do cardápio</h2>
+      <p>Adicione produtos, serviços ou itens que deseja apresentar aos clientes.</p>
+      <form id="formItem">
+        <label for="nomeItem">Nome do item</label>
+        <input type="text" id="nomeItem" placeholder="Nome do produto ou serviço" required>
+
+        <label for="descricaoItem">Descrição</label>
+        <textarea id="descricaoItem" placeholder="Detalhes do item"></textarea>
+
+        <label for="precoItem">Preço (R$)</label>
+        <input type="number" id="precoItem" min="0" step="0.01" placeholder="0,00" required>
+
+        <label for="imagemItem">Imagem do item</label>
+        <input type="file" id="imagemItem" accept="image/png,image/jpeg,image/webp,image/gif">
+        <small class="ajuda">Envie uma imagem JPG, PNG, WEBP ou GIF (até 5 MB).</small>
+
+        <button type="submit">Adicionar item</button>
+      </form>
+    </section>
+
+    <section>
+      <h2>3. Visualização da loja</h2>
+      <p>Confira os dados e os itens cadastrados.</p>
+      <h3>Minha loja</h3>
+      <div id="minhaLoja" class="cards"></div>
+      <h3 style="margin-top:24px">Meus itens</h3>
+      <div id="meusItens" class="cards"></div>
+    </section>
+
+    <p id="mensagem" class="mensagem" role="status"></p>
+  </main>
+
+  <!-- Bibliotecas e Scripts -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/supabase.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/proprietario.js"></script>
+
+  <script>
+    // 1. Conexão com o Supabase
+    const SUPABASE_URL = 'https://jtckhltiaeujevqipydb.supabase.co';
+    const SUPABASE_KEY = 'sb_publishable_mLtwmwSgZT295I5xOE0hNw_zjaJSokr';
+    const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    // ID fixo da loja na tabela 'stores'
+    const ID_DA_LOJA = '2e931ae1-759f-462e-9404-04c1fa0451e5';
+
+    // --- PARTE 1: SALVAR DADOS DA LOJA ---
+    document.getElementById('formLoja').addEventListener('submit', async (event) => {
+      event.preventDefault();
+
+      const nome = document.getElementById('nomeLoja').value;
+      const descricao = document.getElementById('descricaoLoja').value;
+      const endereco = document.getElementById('enderecoLoja').value;
+      const telefone = document.getElementById('telefoneLoja').value;
+      const fileInput = document.getElementById('imagemLoja');
+
+      let imageUrl = null;
+
+      if (fileInput.files.length > 0) {
+        const file = fileInput.files[0];
+        const extensao = file.name.split('.').pop();
+        const nomeArquivo = `loja_${Date.now()}.${extensao}`;
+
+        const { error: uploadError } = await supabaseClient.storage
+          .from('img_comidas')
+          .upload(nomeArquivo, file);
+
+        if (uploadError) {
+          alert('Erro ao enviar a imagem da loja: ' + uploadError.message);
+          return;
+        }
+
+        const { data: urlData } = supabaseClient.storage
+          .from('img_comidas')
+          .getPublicUrl(nomeArquivo);
+
+        imageUrl = urlData.publicUrl;
+      }
+
+      const dadosParaSalvar = {
+        name: nome,
+        description: descricao,
+        address: endereco,
+        phone: telefone
+      };
+
+      if (imageUrl) {
+        dadosParaSalvar.image_url = imageUrl;
+      }
+
+      const { error: dbError } = await supabaseClient
+        .from('stores')
+        .update(dadosParaSalvar)
+        .eq('id', ID_DA_LOJA);
+
+      if (dbError) {
+        alert('Erro ao salvar os dados da loja: ' + dbError.message);
+      } else {
+        alert('Dados e imagem da loja salvos com sucesso!');
+      }
+    });
+
+    // --- PARTE 2: ADICIONAR ITENS DO CARDÁPIO ---
+    document.getElementById('formItem').addEventListener('submit', async (event) => {
+      event.preventDefault();
+
+      const nomeItem = document.getElementById('nomeItem').value;
+      const descricaoItem = document.getElementById('descricaoItem').value;
+      const precoItem = parseFloat(document.getElementById('precoItem').value);
+      const fileInputItem = document.getElementById('imagemItem');
+
+      let imageUrlItem = null;
+
+      if (fileInputItem.files.length > 0) {
+        const file = fileInputItem.files[0];
+        const extensao = file.name.split('.').pop();
+        const nomeArquivo = `item_${Date.now()}.${extensao}`;
+
+        const { error: uploadError } = await supabaseClient.storage
+          .from('img_comidas')
+          .upload(nomeArquivo, file);
+
+        if (uploadError) {
+          alert('Erro ao enviar a imagem do item: ' + uploadError.message);
+          return;
+        }
+
+        const { data: urlData } = supabaseClient.storage
+          .from('img_comidas')
+          .getPublicUrl(nomeArquivo);
+
+        imageUrlItem = urlData.publicUrl;
+      }
+
+      const novoItem = {
+        name: nomeItem,
+        description: descricaoItem,
+        price: precoItem,
+        store_id: ID_DA_LOJA,
+        image_url: imageUrlItem
+      };
+
+      const { error: dbError } = await supabaseClient
+        .from('menu_items')
+        .insert([novoItem]);
+
+      if (dbError) {
+        alert('Erro ao cadastrar o item no banco: ' + dbError.message);
+      } else {
+        alert('Item do cardápio adicionado com sucesso!');
+        document.getElementById('formItem').reset();
+      }
+    });
+  </script>
+</body>
+</html>
