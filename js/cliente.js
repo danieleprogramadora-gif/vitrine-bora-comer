@@ -11,6 +11,43 @@ const CAT_MAP = Object.fromEntries(CATS.map(c => [c.id, c]));
 const est = { lojas: [], itens: [], filtroCat: '', busca: '', apenasPromo: false, ordenacao: 'padrao', sacola: {} };
 let lojaAtual = null;
 
+function obterGridLojas() {
+  return document.getElementById('gridLojas')
+    || document.querySelector('[data-grid-lojas]')
+    || document.querySelector('.grid-lojas, .lojas-grid, .vitrine-grid');
+}
+
+function obterDestinoLoja() {
+  const dlgLoja = document.getElementById('dlgLoja');
+  const modalLoja = document.getElementById('modalLoja');
+  if (dlgLoja) return { container: dlgLoja, modal: modalLoja, fallback: false };
+  if (modalLoja) return { container: modalLoja, modal: modalLoja, fallback: false };
+
+  let painel = document.getElementById('painelLojaFallback');
+  if (!painel) {
+    painel = document.createElement('section');
+    painel.id = 'painelLojaFallback';
+    painel.setAttribute('aria-live', 'polite');
+    painel.style.cssText = [
+      'margin: 20px auto',
+      'max-width: 780px',
+      'padding: 20px',
+      'border: 1px solid #dbe2ea',
+      'border-radius: 12px',
+      'background: #ffffff',
+      'box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08)'
+    ].join(';');
+    const grid = obterGridLojas();
+    if (grid && grid.parentNode) {
+      grid.parentNode.insertBefore(painel, grid);
+    } else {
+      document.body.appendChild(painel);
+    }
+  }
+  painel.style.display = 'block';
+  return { container: painel, modal: null, fallback: true };
+}
+
 function categoriaDe(loja, itensDaLoja = []) {
   const texto = `${loja.name || ''} ${loja.description || ''} ${itensDaLoja.map(i => `${i.name} ${i.description || ''}`).join(' ')}`.toLowerCase();
   for (const c of CATS) {
@@ -126,7 +163,7 @@ function lojasFiltradas() {
 }
 
 function renderVitrine() {
-  const grid = document.getElementById('gridLojas');
+  const grid = obterGridLojas();
   if (!grid) return;
   const lista = lojasFiltradas();
   const cnt = document.getElementById('cntLojas');
@@ -204,17 +241,22 @@ function htmlItem(it) {
     </div>`;
 }
 
+function fecharDestinoLoja(container, modal, fallback) {
+  if (modal && typeof modal.close === 'function' && modal.open) {
+    modal.close();
+  }
+  if (fallback && container) {
+    container.style.display = 'none';
+    container.innerHTML = '';
+  }
+}
+
 function abrirLoja(id) {
   const l = est.lojas.find(x => String(x.id) === String(id));
   if (!l) return mostrarMensagem('Loja não encontrada.', 'erro');
   lojaAtual = l;
   const { itens, usandoDemo } = obterItensDaLoja(l);
-  const modal = document.getElementById('modalLoja');
-  const dlgLoja = document.getElementById('dlgLoja') || modal;
-  if (!dlgLoja) {
-    mostrarMensagem(`Loja selecionada: ${l.name}`);
-    return;
-  }
+  const { container: dlgLoja, modal, fallback } = obterDestinoLoja();
   const urlLoja = `${location.origin}${location.pathname}?loja=${encodeURIComponent(l.id)}`;
 
   const totalSacolaQtd = Object.values(est.sacola).reduce((s, r) => s + r.qtd, 0);
@@ -248,11 +290,11 @@ function abrirLoja(id) {
   });
   document.getElementById('btnQrLoja')?.addEventListener('click', () => abrirQr(`Cardápio · ${l.name}`, urlLoja));
   document.getElementById('irSacola')?.addEventListener('click', () => {
-    if (modal && typeof modal.close === 'function') modal.close();
+    fecharDestinoLoja(dlgLoja, modal, fallback);
     abrirSacola();
   });
   document.getElementById('fecharLoja')?.addEventListener('click', () => {
-    if (modal && typeof modal.close === 'function') modal.close();
+    fecharDestinoLoja(dlgLoja, modal, fallback);
   });
 }
 
@@ -389,7 +431,7 @@ function limparTodosFiltros() {
 
 document.getElementById('btnLimparFiltros')?.addEventListener('click', limparTodosFiltros);
 
-document.getElementById('gridLojas')?.addEventListener('click', e => {
+obterGridLojas()?.addEventListener('click', e => {
   if (e.target.closest('#limparVazio')) return limparTodosFiltros();
   const card = e.target.closest('[data-abrir]');
   if (card) abrirLoja(card.dataset.abrir);
