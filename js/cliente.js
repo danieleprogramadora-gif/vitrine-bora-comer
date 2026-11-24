@@ -179,7 +179,9 @@ async function carregar() {
   renderVitrine();
 
   const paramLoja = new URLSearchParams(location.search).get('loja');
-  if (paramLoja) abrirLoja(paramLoja);
+  if (paramLoja) {
+    requestAnimationFrame(() => abrirLoja(paramLoja));
+  }
 }
 
 function htmlItem(it) {
@@ -207,6 +209,7 @@ function abrirLoja(id) {
   if (!l) return mostrarMensagem('Loja não encontrada.', 'erro');
   lojaAtual = l;
   const { itens, usandoDemo } = obterItensDaLoja(l);
+  const modal = document.getElementById('modalLoja');
   const dlgLoja = document.getElementById('dlgLoja');
   const urlLoja = `${location.origin}${location.pathname}?loja=${encodeURIComponent(l.id)}`;
   dlgLoja.innerHTML = `
@@ -224,7 +227,7 @@ function abrirLoja(id) {
       <button type="button" id="irSacola">Ver sacola</button>
       <button type="button" class="perigo" id="fecharLoja">Fechar</button>
     </div>`;
-  document.getElementById('modalLoja').showModal();
+  if (!modal.open) modal.showModal();
 
   dlgLoja.querySelectorAll('[data-qtd]').forEach(b => {
     b.addEventListener('click', () => {
@@ -234,10 +237,10 @@ function abrirLoja(id) {
   });
   document.getElementById('btnQrLoja').addEventListener('click', () => abrirQr(`Cardápio · ${l.name}`, urlLoja));
   document.getElementById('irSacola').addEventListener('click', () => {
-    document.getElementById('modalLoja').close();
+    modal.close();
     abrirSacola();
   });
-  document.getElementById('fecharLoja').addEventListener('click', () => document.getElementById('modalLoja').close());
+  document.getElementById('fecharLoja').addEventListener('click', () => modal.close());
 }
 
 function alterarQtd(itemId, delta) {
@@ -374,4 +377,4 @@ document.getElementById('gridLojas')?.addEventListener('click', e => {
 
 document.getElementById('btnAbrirSacola')?.addEventListener('click', abrirSacola);
 
-carregar();S
+carregar();
