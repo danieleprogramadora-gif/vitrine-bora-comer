@@ -1,33 +1,29 @@
-// Vitrine: descobrir restaurantes, montar a sacola, gerar QR Code e enviar o pedido.
-let todasLojas = [];
-let carrinho = null;
-let catAtual = 'Todos';
-const itensCache = {};
-
-const lista = document.getElementById('listaLojas');
+// Vitrine pública do cliente: busca restaurantes e itens no Supabase, aplica filtros e gerencia a sacola.
 const CATS = [
-  ['Hambúrgueres', /burger|hamb|smash|lanche/],
-  ['Pizzas', /pizz|forno/],
-  ['Japonesa', /sushi|japon|temaki|sashimi/],
-  ['Saudável', /salada|saud[aá]vel|fit|vegan|natural/],
-  ['Açaí', /a[cç]a[ií]/]
+  { id: 'hamburguer', label: 'Hambúrgueres', emoji: '🍔', cls: 'c-burg', kw: ['hamburguer', 'hambúrguer', 'burger', 'lanche', 'x-'] },
+  { id: 'pizza', label: 'Pizzas', emoji: '🍕', cls: 'c-pizza', kw: ['pizza', 'pizzaria'] },
+  { id: 'japonesa', label: 'Japonesa', emoji: '🍣', cls: 'c-jap', kw: ['sushi', 'japonesa', 'temaki', 'yakisoba'] },
+  { id: 'saudavel', label: 'Saudável', emoji: '🥗', cls: 'c-saud', kw: ['salada', 'saudavel', 'saudável', 'fit', 'poke', 'vegano'] },
+  { id: 'acai', label: 'Açaí', emoji: '🍇', cls: 'c-acai', kw: ['acai', 'açaí', 'sorvete', 'gelato'] }
 ];
-const EMOJI = {
-  'Hambúrgueres': '🍔',
-  Pizzas: '🍕',
-  Japonesa: '🍣',
-  'Saudável': '🥗',
-  'Açaí': '🍇',
-  Outros: '🍽️'
-};
+const CAT_MAP = Object.fromEntries(CATS.map(c => [c.id, c]));
 
-const categoriaDe = l => {
-  const t = ((l.name || '') + ' ' + (l.description || '')).toLowerCase();
-  const c = CATS.find(([, r]) => r.test(t));
-  return c ? c[0] : 'Outros';
-};
+const est = { lojas: [], itens: [], filtroCat: '', busca: '', apenasPromo: false, ordenacao: 'padrao', sacola: {} };
+let lojaAtual = null;
 
-// Cardápio de fallback quando a loja ainda não tem itens cadastrados no banco
+function categoriaDe(loja, itensDaLoja = []) {
+  const texto = `${loja.name || ''} ${loja.description || ''} ${itensDaLoja.map(i => `${i.name} ${i.description || ''}`).join(' ')}`.toLowerCase();
+  for (const c of CATS) {
+    if (c.kw.some(k => texto.includes(k))) return c.id;
+  }
+  return '';
+}
+
+function iniciais(nome) {
+  const partes = String(nome || 'LJ').trim().split(/\s+/);
+  return ((partes[0]?.[0] || '') + (partes[1]?.[0] || partes[0]?.[1] || '')).toUpperCase();
+}
+
 function gerarCardapioDemo(loja) {
   const baseId = `demo-${loja.id}`;
   const nomeLoja = (loja.name || '').toLowerCase();
@@ -36,28 +32,28 @@ function gerarCardapioDemo(loja) {
     return [
       {
         id: `${baseId}-1`,
-        name: 'Combo Bora Comer Clássico',
-        description: 'Hambúrguer artesanal grelhado, queijo cheddar, alface, tomate, molho da casa e fritas.',
+        name: '🍔 Combo Bora Comer Clássico',
+        description: 'Hambúrguer artesanal grelhado, queijo cheddar, alface, tomate, molho da casa e batatas fritas.',
         price: 32.90,
         image_url: ''
       },
       {
         id: `${baseId}-2`,
-        name: 'Duplo Bacon Smash',
+        name: '🥓 Duplo Bacon Smash',
         description: 'Dois blends smash na chapa, bacon crocante, cheddar duplo e pão brioche amanteigado.',
         price: 36.50,
         image_url: ''
       },
       {
         id: `${baseId}-3`,
-        name: 'Porção de Batata com Cheddar e Bacon',
+        name: '🍟 Porção de Batata com Cheddar e Bacon',
         description: 'Batatas crocantes cobertas com creme de cheddar quente e cubos de bacon.',
         price: 22.00,
         image_url: ''
       },
       {
         id: `${baseId}-4`,
-        name: 'Refrigerante Lata 350ml',
+        name: '🥤 Refrigerante Lata 350ml',
         description: 'Bem gelado (Coca-Cola, Guaraná ou Zero).',
         price: 6.50,
         image_url: ''
@@ -90,430 +86,292 @@ function gerarCardapioDemo(loja) {
   ];
 }
 
-// ---------- Sessão no cabeçalho ----------
-(async () => {
-  try {
-    if (!window.db?.auth) return;
-    const { data } = await db.auth.getSession();
-    const u = data?.session?.user;
-    if (!u) return;
-    const areaConta = document.getElementById('areaConta');
-    if (areaConta) {
-      areaConta.innerHTML = '<button type="button" class="btn-sair" onclick="sair()">Sair</button>';
-    }
-    if (u.user_metadata?.role === 'owner') {
-      const v = document.getElementById('linkVender');
-      if (v) {
-        v.href = 'proprietario.html';
-        v.textContent = 'Meu painel';
-      }
-    }
-  } catch (e) {
-    console.warn('Sessão não carregada:', e);
+function obterItensDaLoja(loja) {
+  const reais = est.itens.filter(i => String(i.store_id) === String(loja.id));
+  if (reais.length) {
+    return { itens: reais, usandoDemo: false };
   }
-})();
-
-// ---------- Lista de lojas ----------
-async function carregarLojas() {
-  mostrarMensagem('Carregando restaurantes...');
-  const { data, error } = await db.from('stores').select('*').order('created_at', { ascending: false });
-  if (error) {
-    return mostrarMensagem('Erro ao carregar restaurantes: ' + error.message, 'erro');
-  }
-  todasLojas = data || [];
-  filtrar();
+  return { itens: gerarCardapioDemo(loja), usandoDemo: true };
 }
 
-function filtrar() {
-  const inputPesquisa = document.getElementById('pesquisa');
-  const t = inputPesquisa ? inputPesquisa.value.trim().toLowerCase() : '';
-  const r = todasLojas.filter(l =>
-    (catAtual === 'Todos' || categoriaDe(l) === catAtual) &&
-    (!t || ((l.name || '') + ' ' + (l.description || '')).toLowerCase().includes(t))
-  );
-
-  const contLojas = document.getElementById('contLojas');
-  if (contLojas) contLojas.textContent = r.length;
-
-  if (!r.length) {
-    if (lista) lista.innerHTML = '';
-    return mostrarMensagem('Nenhum restaurante encontrado.');
-  }
-  mostrarMensagem('');
-
-  if (lista) {
-    lista.innerHTML = r.map(l => {
-      const cat = categoriaDe(l);
-      const novo = l.created_at ? (Date.now() - new Date(l.created_at) < 14 * 864e5) : false;
-      return `
-        <article class="card loja-card" data-loja="${esc(l.id)}" tabindex="0" role="button" aria-label="Abrir cardápio de ${esc(l.name)}">
-          <div class="img-wrap">
-            ${l.image_url
-              ? `<img src="${esc(l.image_url)}" alt="${esc(l.name)}" loading="lazy">`
-              : `<div class="sem-img">${EMOJI[cat]}</div>`}
-            <span class="selo">${novo ? 'Novidade' : 'Vem descobrir'}</span>
-          </div>
-          <div class="loja-corpo">
-            <span class="avatar">${esc((l.name || '?')[0].toUpperCase())}</span>
-            <div>
-              <h3>${esc(l.name)}</h3>
-              <small>${cat === 'Outros' ? 'Restaurante' : cat} · Cardápio disponível</small>
-            </div>
-            <span class="seta">→</span>
-          </div>
-        </article>`;
-    }).join('');
-  }
+function renderCategorias() {
+  const el = document.getElementById('catStrip');
+  if (!el) return;
+  const todosAtivo = !est.filtroCat ? ' ativo' : '';
+  el.innerHTML = `
+    <button type="button" class="cat-tile c-todos${todosAtivo}" data-cat="">
+      <span class="cat-box" aria-hidden="true">🍽️</span>
+      <span class="cat-lbl">Todos</span>
+    </button>` + CATS.map(c => `
+    <button type="button" class="cat-tile ${c.cls}${est.filtroCat === c.id ? ' ativo' : ''}" data-cat="${c.id}">
+      <span class="cat-box" aria-hidden="true">${c.emoji}</span>
+      <span class="cat-lbl">${c.label}</span>
+    </button>`).join('');
 }
 
-const pesquisaEl = document.getElementById('pesquisa');
-if (pesquisaEl) pesquisaEl.addEventListener('input', filtrar);
-
-const btnBuscarEl = document.getElementById('btnBuscar');
-if (btnBuscarEl) {
-  btnBuscarEl.onclick = () => {
-    filtrar();
-    const rest = document.getElementById('restaurantes');
-    if (rest) rest.scrollIntoView({ behavior: 'smooth' });
-  };
-}
-
-const categoriasEl = document.getElementById('categorias');
-if (categoriasEl) {
-  categoriasEl.addEventListener('click', e => {
-    const b = e.target.closest('.cat');
-    if (!b) return;
-    catAtual = b.dataset.cat;
-    document.querySelectorAll('.cat').forEach(c => c.classList.toggle('ativa', c === b));
-    filtrar();
+function lojasFiltradas() {
+  const q = est.busca.trim().toLowerCase();
+  const lista = est.lojas.filter(l => {
+    const { itens: itensL } = obterItensDaLoja(l);
+    const cat = categoriaDe(l, itensL);
+    if (est.filtroCat && cat !== est.filtroCat) return false;
+    if (est.apenasPromo && !itensL.some(i => Number(i.price) > 0 && Number(i.price) < 25)) return false;
+    if (!q) return true;
+    const matchLoja = `${l.name || ''} ${l.description || ''} ${l.address || ''}`.toLowerCase().includes(q);
+    const matchItem = itensL.some(i => `${i.name} ${i.description || ''}`.toLowerCase().includes(q));
+    return matchLoja || matchItem;
   });
+  if (est.ordenacao === 'nome') lista.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'pt-BR'));
+  return lista;
 }
 
-// ---------- Diálogos (QR Code, Cardápio, Pedido) ----------
-const dlgQr = document.createElement('dialog');
-dlgQr.className = 'dialogo';
-document.body.appendChild(dlgQr);
-
-const dlgLoja = document.createElement('dialog');
-dlgLoja.className = 'dialogo';
-document.body.appendChild(dlgLoja);
-
-const dlgPedido = document.createElement('dialog');
-dlgPedido.className = 'dialogo';
-document.body.appendChild(dlgPedido);
-
-function abrirModalSeguro(dlg) {
-  try {
-    if (!dlg.open) dlg.showModal();
-  } catch {
-    dlg.setAttribute('open', '');
+function renderVitrine() {
+  const grid = document.getElementById('gridLojas');
+  if (!grid) return;
+  const lista = lojasFiltradas();
+  const cnt = document.getElementById('cntLojas');
+  if (cnt) cnt.textContent = lista.length;
+  const titulo = document.getElementById('tituloVitrine');
+  if (titulo) {
+    titulo.textContent = est.filtroCat
+      ? `${CAT_MAP[est.filtroCat].label}`
+      : (est.busca ? `Resultados para "${est.busca}"` : 'Restaurantes para descobrir');
   }
-}
-
-function fecharModalSeguro(dlg) {
-  try {
-    if (dlg.open) dlg.close();
-  } catch {
-    dlg.removeAttribute('open');
+  if (!lista.length) {
+    grid.innerHTML = '<p class="vazio">Nenhuma loja encontrada com esse filtro. <button type="button" class="link-limpar" id="limparVazio">Limpar filtros</button></p>';
+    return;
   }
+  grid.innerHTML = lista.map((l, idx) => {
+    const { itens: itensL } = obterItensDaLoja(l);
+    const cat = CAT_MAP[categoriaDe(l, itensL)];
+    const minPreco = itensL.reduce((m, i) => (Number(i.price) > 0 && Number(i.price) < m ? Number(i.price) : m), Infinity);
+    const badge = idx < 3 ? '<span class="badge-card">NOVIDADE</span>' : '';
+    const midia = l.image_url
+      ? `<img src="${esc(l.image_url)}" alt="${esc(l.name)}" loading="lazy">`
+      : `<span class="card-thumb-ph" aria-hidden="true">${cat ? cat.emoji : '🍽️'}</span>`;
+    const meta = minPreco < Infinity ? `A partir de ${formatarPreco(minPreco)}` : 'Cardápio disponível';
+    return `
+      <article class="card-loja" data-abrir="${esc(l.id)}">
+        <div class="card-thumb">${midia}${badge}</div>
+        <div class="card-body">
+          <span class="card-avatar">${esc(iniciais(l.name))}</span>
+          <div class="card-info">
+            <h3 class="card-nome">${esc(l.name)}</h3>
+            <p class="card-sub">${cat ? `${cat.label} · ` : 'Restaurante · '}${meta}</p>
+          </div>
+          <span class="card-go" aria-hidden="true">→</span>
+        </div>
+      </article>`;
+  }).join('');
 }
 
-function abrirQrCode(titulo, conteudoInicial) {
-  dlgQr.innerHTML = `
-    <h3>QR Code de acesso · ${esc(titulo)}</h3>
-    <p><small>Use o link abaixo para o professor e alunos acessarem a loja.</small></p>
-    <label for="urlQrInput">Link ou conteúdo do QR Code</label>
-    <input type="text" id="urlQrInput" value="${esc(conteudoInicial)}" style="width:100%;margin:6px 0 12px">
-    <div id="qrCanvas" style="display:flex;justify-content:center;align-items:center;min-height:190px;padding:16px;background:#fff;border-radius:8px;margin:8px 0"></div>
-    <div class="acoes">
-      <button type="button" id="atualizarQr">Atualizar QR</button>
-      <button type="button" id="copiarLinkQr">Copiar link</button>
-      <button type="button" class="perigo" id="fecharQr">Fechar</button>
-    </div>`;
+async function carregar() {
+  mostrarMensagem('Carregando restaurantes...');
+  const [resLojas, resItens] = await Promise.all([
+    db.from('stores').select('*').order('created_at', { ascending: false }),
+    db.from('menu_items').select('*')
+  ]);
+  if (resLojas.error) return mostrarMensagem('Erro ao carregar lojas: ' + resLojas.error.message, 'erro');
+  est.lojas = resLojas.data || [];
+  est.itens = resItens.error ? [] : (resItens.data || []);
+  mostrarMensagem('');
+  renderCategorias();
+  renderVitrine();
 
-  const inputUrl = dlgQr.querySelector('#urlQrInput');
-  const box = dlgQr.querySelector('#qrCanvas');
-
-  const renderizar = texto => {
-    const valor = (texto || '').trim() || location.href;
-    box.innerHTML = '';
-    if (typeof QRCode !== 'undefined') {
-      new QRCode(box, { text: valor, width: 180, height: 180 });
-    } else {
-      box.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(valor)}" alt="QR Code">`;
-    }
-  };
-
-  renderizar(conteudoInicial);
-
-  dlgQr.querySelector('#atualizarQr').onclick = () => renderizar(inputUrl.value);
-  dlgQr.querySelector('#copiarLinkQr').onclick = () => {
-    navigator.clipboard?.writeText(inputUrl.value).catch(() => {});
-    alert('Link copiado!');
-  };
-  dlgQr.querySelector('#fecharQr').onclick = () => fecharModalSeguro(dlgQr);
-  abrirModalSeguro(dlgQr);
+  const paramLoja = new URLSearchParams(location.search).get('loja');
+  if (paramLoja) abrirLoja(paramLoja);
 }
 
-function htmlItem(i) {
-  const q = carrinho?.itens[i.id]?.qtd || 0;
+function htmlItem(it) {
+  const qtd = est.sacola[it.id]?.qtd || 0;
   return `
-    <div class="menu-item">
-      ${i.image_url ? `<img src="${esc(i.image_url)}" alt="${esc(i.name)}" loading="lazy">` : ''}
+    <div class="item-menu">
+      ${it.image_url ? `<img src="${esc(it.image_url)}" alt="${esc(it.name)}">` : ''}
       <div>
-        <h4>${esc(i.name)}</h4>
-        ${i.description ? `<p>${esc(i.description)}</p>` : ''}
+        <h4>${esc(it.name)}</h4>
+        ${it.description ? `<p>${esc(it.description)}</p>` : ''}
       </div>
-      <div class="menu-acao">
-        <span class="preco">${formatarPreco(i.price)}</span>
-        <div class="stepper">
-          <button type="button" data-sub="${esc(i.id)}" aria-label="Remover um">−</button>
-          <span data-qtd="${esc(i.id)}">${q}</span>
-          <button type="button" data-add="${esc(i.id)}" aria-label="Adicionar um">+</button>
+      <div class="item-dir">
+        <span class="preco">${formatarPreco(it.price)}</span>
+        <div class="qtd-box">
+          <button type="button" data-qtd="-1" data-id="${esc(it.id)}" aria-label="Remover">−</button>
+          <span>${qtd}</span>
+          <button type="button" data-qtd="1" data-id="${esc(it.id)}" aria-label="Adicionar">+</button>
         </div>
       </div>
     </div>`;
 }
 
-async function abrirLoja(id) {
-  const l = todasLojas.find(x => String(x.id) === String(id));
-  if (!l) return;
-
-  let itens = [];
-  let usandoDemo = false;
-
-  try {
-    const { data, error } = await db
-      .from('menu_items')
-      .select('*')
-      .eq('store_id', l.id)
-      .order('created_at');
-
-    if (!error && Array.isArray(data)) {
-      itens = data.filter(item => item.available !== false);
-    }
-  } catch (err) {
-    console.warn('Falha ao buscar itens:', err);
-  }
-
-  if (!itens.length) {
-    itens = gerarCardapioDemo(l);
-    usandoDemo = true;
-  }
-
-  itens.forEach(i => {
-    itensCache[i.id] = { ...i, loja: l };
-  });
-
+function abrirLoja(id) {
+  const l = est.lojas.find(x => String(x.id) === String(id));
+  if (!l) return mostrarMensagem('Loja não encontrada.', 'erro');
+  lojaAtual = l;
+  const { itens, usandoDemo } = obterItensDaLoja(l);
+  const dlgLoja = document.getElementById('dlgLoja');
   const urlLoja = `${location.origin}${location.pathname}?loja=${encodeURIComponent(l.id)}`;
   dlgLoja.innerHTML = `
     <h3>${esc(l.name)}</h3>
     ${l.description ? `<p>${esc(l.description)}</p>` : ''}
     ${l.address ? `<p><small>📍 ${esc(l.address)}</small></p>` : ''}
-    ${usandoDemo ? `<p><small>Cardápio demonstrativo exibido enquanto não há itens cadastrados no banco.</small></p>` : ''}
+    ${usandoDemo ? `<p><small>✨ Cardápio em destaque para demonstração · Adicione itens à sacola</small></p>` : ''}
     <div class="menu-lista">
-      ${itens.map(htmlItem).join('')}
+      ${itens.length
+        ? itens.map(htmlItem).join('')
+        : '<p>Este restaurante ainda não tem itens cadastrados no cardápio.</p>'}
     </div>
     <div class="acoes">
       <button type="button" id="btnQrLoja">QR Code da loja</button>
       <button type="button" id="irSacola">Ver sacola</button>
       <button type="button" class="perigo" id="fecharLoja">Fechar</button>
     </div>`;
+  document.getElementById('modalLoja').showModal();
 
-  dlgLoja.querySelector('#btnQrLoja').onclick = () => abrirQrCode(l.name, urlLoja);
-  dlgLoja.querySelector('#fecharLoja').onclick = () => fecharModalSeguro(dlgLoja);
-  dlgLoja.querySelector('#irSacola').onclick = () => {
-    if (carrinho) {
-      fecharModalSeguro(dlgLoja);
-      abrirPedido();
-    } else {
-      mostrarMensagem('Adicione pelo menos 1 item antes de ir para a sacola.');
-    }
-  };
-
-  abrirModalSeguro(dlgLoja);
+  dlgLoja.querySelectorAll('[data-qtd]').forEach(b => {
+    b.addEventListener('click', () => {
+      alterarQtd(b.dataset.id, Number(b.dataset.qtd));
+      abrirLoja(l.id);
+    });
+  });
+  document.getElementById('btnQrLoja').addEventListener('click', () => abrirQr(`Cardápio · ${l.name}`, urlLoja));
+  document.getElementById('irSacola').addEventListener('click', () => {
+    document.getElementById('modalLoja').close();
+    abrirSacola();
+  });
+  document.getElementById('fecharLoja').addEventListener('click', () => document.getElementById('modalLoja').close());
 }
 
-if (lista) {
-  lista.addEventListener('click', e => {
-    const c = e.target.closest('.loja-card');
-    if (c) abrirLoja(c.dataset.loja);
+function alterarQtd(itemId, delta) {
+  let item = est.itens.find(x => String(x.id) === String(itemId));
+  let lojaDoItem = item ? est.lojas.find(l => String(l.id) === String(item.store_id)) : lojaAtual;
+
+  if (!item && lojaDoItem) {
+    const { itens } = obterItensDaLoja(lojaDoItem);
+    item = itens.find(x => String(x.id) === String(itemId));
+  }
+  if (!item) return;
+
+  const atual = est.sacola[itemId]?.qtd || 0;
+  const prox = atual + delta;
+  if (prox <= 0) delete est.sacola[itemId];
+  else est.sacola[itemId] = { item, loja: lojaDoItem, qtd: prox };
+  atualizarBadgeSacola();
+}
+
+function atualizarBadgeSacola() {
+  const total = Object.values(est.sacola).reduce((s, r) => s + r.qtd, 0);
+  const b = document.getElementById('badgeSacola');
+  if (b) b.textContent = total;
+}
+
+function abrirSacola() {
+  const entradas = Object.values(est.sacola);
+  const dlg = document.getElementById('dlgSacola');
+  if (!entradas.length) {
+    dlg.innerHTML = '<h3>Sua sacola está vazia</h3><p>Escolha itens no cardápio de alguma loja.</p><div class="acoes"><button type="button" id="fecharSac">Fechar</button></div>';
+    document.getElementById('modalSacola').showModal();
+    document.getElementById('fecharSac').addEventListener('click', () => document.getElementById('modalSacola').close());
+    return;
+  }
+  const total = entradas.reduce((s, r) => s + Number(r.item.price) * r.qtd, 0);
+  dlg.innerHTML = `
+    <h3>Sua sacola</h3>
+    ${entradas.map(r => `
+      <div class="sacola-linha">
+        <div><strong>${esc(r.item.name)}</strong><br><small>${esc(r.loja?.name || '')}</small></div>
+        <div>${r.qtd} × ${formatarPreco(r.item.price)} = <strong>${formatarPreco(r.qtd * r.item.price)}</strong></div>
+      </div>`).join('')}
+    <p class="sacola-total">Total: ${formatarPreco(total)}</p>
+    <div class="acoes">
+      <button type="button" id="btnZap">Enviar no WhatsApp</button>
+      <button type="button" id="btnSimular">Simular pedido + QR</button>
+      <button type="button" class="perigo" id="limparSac">Limpar</button>
+      <button type="button" id="fecharSac">Fechar</button>
+    </div>`;
+  document.getElementById('modalSacola').showModal();
+  document.getElementById('fecharSac').addEventListener('click', () => document.getElementById('modalSacola').close());
+  document.getElementById('limparSac').addEventListener('click', () => {
+    est.sacola = {};
+    atualizarBadgeSacola();
+    abrirSacola();
   });
-  lista.addEventListener('keydown', e => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      const c = e.target.closest('.loja-card');
-      if (c) {
-        e.preventDefault();
-        abrirLoja(c.dataset.loja);
-      }
-    }
+  document.getElementById('btnZap').addEventListener('click', () => {
+    const linhas = entradas.map(r => `• ${r.qtd}x ${r.item.name} (${formatarPreco(r.item.price * r.qtd)})`).join('%0A');
+    const msg = `Olá! Gostaria de fazer um pedido:%0A${linhas}%0ATotal: ${encodeURIComponent(formatarPreco(total))}`;
+    window.open(`https://wa.me/?text=${msg}`, '_blank', 'noopener');
+  });
+  document.getElementById('btnSimular').addEventListener('click', () => {
+    const codigo = 'PED-' + Math.random().toString(36).slice(2, 7).toUpperCase();
+    est.sacola = {};
+    atualizarBadgeSacola();
+    document.getElementById('modalSacola').close();
+    abrirQr(`Pedido ${codigo} · ${formatarPreco(total)}`, `${location.origin}${location.pathname}?pedido=${codigo}`);
   });
 }
 
-dlgLoja.addEventListener('click', e => {
-  const b = e.target.closest('button');
-  if (!b || !(b.dataset.add || b.dataset.sub)) return;
-  mudarQtd(b.dataset.add || b.dataset.sub, b.dataset.add ? 1 : -1);
+function abrirQr(titulo, texto) {
+  const dlg = document.getElementById('dlgQr');
+  dlg.innerHTML = `
+    <h3>${esc(titulo)}</h3>
+    <div id="qrCanvas"></div>
+    <p class="qr-url">${esc(texto)}</p>
+    <div class="acoes"><button type="button" id="fecharQr">Fechar</button></div>`;
+  new QRCode(document.getElementById('qrCanvas'), { text: texto, width: 196, height: 196 });
+  document.getElementById('modalQr').showModal();
+  document.getElementById('fecharQr').addEventListener('click', () => document.getElementById('modalQr').close());
+}
+
+document.getElementById('catStrip')?.addEventListener('click', e => {
+  const btn = e.target.closest('[data-cat]');
+  if (!btn) return;
+  est.filtroCat = btn.dataset.cat;
+  renderCategorias();
+  renderVitrine();
 });
 
-// ---------- Sacola e Pedido ----------
-function totais() {
-  const l = Object.values(carrinho?.itens || {});
-  return {
-    qtd: l.reduce((a, i) => a + i.qtd, 0),
-    total: l.reduce((a, i) => a + i.qtd * i.preco, 0)
-  };
+document.getElementById('formBusca')?.addEventListener('submit', e => {
+  e.preventDefault();
+  est.busca = document.getElementById('inputBusca')?.value || '';
+  renderVitrine();
+});
+
+document.getElementById('inputBusca')?.addEventListener('input', e => {
+  est.busca = e.target.value;
+  renderVitrine();
+});
+
+document.getElementById('btnPromo')?.addEventListener('click', e => {
+  est.apenasPromo = !est.apenasPromo;
+  e.currentTarget.classList.toggle('ativo', est.apenasPromo);
+  renderVitrine();
+});
+
+document.getElementById('btnOrdenar')?.addEventListener('click', e => {
+  est.ordenacao = est.ordenacao === 'padrao' ? 'nome' : 'padrao';
+  e.currentTarget.classList.toggle('ativo', est.ordenacao === 'nome');
+  renderVitrine();
+});
+
+function limparTodosFiltros() {
+  est.filtroCat = '';
+  est.busca = '';
+  est.apenasPromo = false;
+  est.ordenacao = 'padrao';
+  const inp = document.getElementById('inputBusca');
+  if (inp) inp.value = '';
+  document.getElementById('btnPromo')?.classList.remove('ativo');
+  document.getElementById('btnOrdenar')?.classList.remove('ativo');
+  renderCategorias();
+  renderVitrine();
 }
 
-function atualizarContador() {
-  const cont = document.getElementById('contSacola');
-  if (cont) cont.textContent = totais().qtd;
-}
+document.getElementById('btnLimparFiltros')?.addEventListener('click', limparTodosFiltros);
 
-function mudarQtd(id, delta) {
-  const item = itensCache[id];
-  if (!item?.loja) return;
+document.getElementById('gridLojas')?.addEventListener('click', e => {
+  if (e.target.closest('#limparVazio')) return limparTodosFiltros();
+  const card = e.target.closest('[data-abrir]');
+  if (card) abrirLoja(card.dataset.abrir);
+});
 
-  if (delta > 0 && carrinho && carrinho.loja.id !== item.loja.id) {
-    if (!confirm('Sua sacola tem itens de outro restaurante. Deseja começar uma nova sacola?')) return;
-    carrinho = null;
-    document.querySelectorAll('[data-qtd]').forEach(s => { s.textContent = '0'; });
-  }
+document.getElementById('btnAbrirSacola')?.addEventListener('click', abrirSacola);
 
-  if (!carrinho) carrinho = { loja: item.loja, itens: {} };
-  const nova = Math.max(0, (carrinho.itens[id]?.qtd || 0) + delta);
-  if (nova) {
-    carrinho.itens[id] = { nome: item.name, preco: Number(item.price || 0), qtd: nova };
-  } else {
-    delete carrinho.itens[id];
-  }
-  if (!Object.keys(carrinho.itens).length) carrinho = null;
-
-  document.querySelectorAll(`[data-qtd="${id}"]`).forEach(s => { s.textContent = nova; });
-  atualizarContador();
-}
-
-const btnSacola = document.getElementById('btnSacola');
-if (btnSacola) {
-  btnSacola.onclick = () => {
-    if (carrinho) abrirPedido();
-    else mostrarMensagem('Sua sacola está vazia. Abra um restaurante e adicione itens.');
-  };
-}
-
-function abrirPedido() {
-  const linhas = Object.values(carrinho.itens)
-    .map(i => `<li><span>${i.qtd}× ${esc(i.nome)}</span><span>${formatarPreco(i.qtd * i.preco)}</span></li>`)
-    .join('');
-
-  dlgPedido.innerHTML = `
-    <form id="formPedido" method="dialog">
-      <h3>Sua sacola · ${esc(carrinho.loja.name)}</h3>
-      <ul class="resumo">
-        ${linhas}
-        <li class="resumo-total"><span>Total</span><span>${formatarPreco(totais().total)}</span></li>
-      </ul>
-      <label for="pNome">Seu nome</label>
-      <input id="pNome" required placeholder="Como devemos te chamar?">
-
-      <label for="pTipo">Como deseja receber?</label>
-      <select id="pTipo">
-        <option value="Entrega">Entrega</option>
-        <option value="Retirada">Retirar no restaurante</option>
-      </select>
-
-      <div id="blocoEndereco">
-        <label for="pEndereco">Endereço de entrega</label>
-        <input id="pEndereco" required placeholder="Rua, número, bairro e complemento">
-      </div>
-
-      <label for="pPagto">Forma de pagamento</label>
-      <select id="pPagto">
-        <option>Pix</option>
-        <option>Cartão na entrega</option>
-        <option>Dinheiro</option>
-      </select>
-
-      <div id="blocoTroco" hidden>
-        <label for="pTroco">Troco para quanto?</label>
-        <input id="pTroco" placeholder="Ex.: R$ 100,00">
-      </div>
-
-      <label for="pObs">Observações</label>
-      <textarea id="pObs" placeholder="Ex.: sem cebola, borda recheada..."></textarea>
-
-      <div class="acoes">
-        <button type="submit">Enviar pedido por WhatsApp</button>
-        <button type="button" id="simularPedido">Simular pedido + QR</button>
-        <button type="button" class="perigo" id="fecharPedido">Voltar</button>
-      </div>
-    </form>`;
-
-  const $ = id => dlgPedido.querySelector('#' + id);
-  $('pTipo').onchange = e => {
-    const ent = e.target.value === 'Entrega';
-    $('blocoEndereco').hidden = !ent;
-    $('pEndereco').required = ent;
-  };
-  $('pPagto').onchange = e => {
-    $('blocoTroco').hidden = e.target.value !== 'Dinheiro';
-  };
-  $('fecharPedido').onclick = () => fecharModalSeguro(dlgPedido);
-  $('simularPedido').onclick = () => finalizarSimulado($);
-  $('formPedido').onsubmit = ev => {
-    ev.preventDefault();
-    enviarPedido($);
-  };
-
-  abrirModalSeguro(dlgPedido);
-}
-
-function limparSacola() {
-  carrinho = null;
-  document.querySelectorAll('[data-qtd]').forEach(s => { s.textContent = '0'; });
-  atualizarContador();
-}
-
-function finalizarSimulado($) {
-  const nomeCliente = ($('pNome').value || '').trim() || 'Aluno Teste';
-  const codigoPedido = 'PED-' + Math.floor(1000 + Math.random() * 9000);
-  const resumoTexto = `${codigoPedido} | ${carrinho.loja.name} | Cliente: ${nomeCliente} | Total: ${formatarPreco(totais().total)}`;
-  fecharModalSeguro(dlgPedido);
-  limparSacola();
-  mostrarMensagem(`Pedido de teste ${codigoPedido} registrado para ${nomeCliente}!`, 'sucesso');
-  abrirQrCode(`Pedido ${codigoPedido}`, resumoTexto);
-}
-
-function enviarPedido($) {
-  let fone = (carrinho.loja.phone || '').replace(/\D/g, '');
-  if (fone.length < 10) return alert('Este restaurante ainda não cadastrou um telefone para receber pedidos.');
-  if (fone.length <= 11) fone = '55' + fone;
-
-  const entrega = $('pTipo').value === 'Entrega';
-  const pg = $('pPagto').value;
-  const msg = [
-    `*Novo pedido - ${carrinho.loja.name}*`,
-    '',
-    `Cliente: ${$('pNome').value.trim()}`,
-    entrega ? `Entrega: ${$('pEndereco').value.trim()}` : 'Retirada no restaurante',
-    '',
-    '*Itens:*',
-    ...Object.values(carrinho.itens).map(i => `${i.qtd}x ${i.nome} - ${formatarPreco(i.qtd * i.preco)}`),
-    '',
-    `*Total: ${formatarPreco(totais().total)}*`,
-    `Pagamento: ${pg}` + (pg === 'Dinheiro' && $('pTroco').value ? ` (troco para ${$('pTroco').value})` : ''),
-    $('pObs').value.trim() ? `Obs.: ${$('pObs').value.trim()}` : ''
-  ].filter((l, i, a) => l !== '' || a[i - 1] !== '').join('\n');
-
-  window.open(`https://wa.me/${fone}?text=${encodeURIComponent(msg)}`, '_blank');
-  fecharModalSeguro(dlgPedido);
-  limparSacola();
-  mostrarMensagem('Pedido enviado para o WhatsApp do restaurante. Aguarde a confirmação!', 'sucesso');
-}
-
-(async () => {
-  await carregarLojas();
-  const params = new URLSearchParams(location.search);
-  const lojaParam = params.get('loja');
-  if (lojaParam) abrirLoja(lojaParam);
-})();
+carregar();S
