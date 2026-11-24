@@ -212,6 +212,13 @@ function abrirLoja(id) {
   const modal = document.getElementById('modalLoja');
   const dlgLoja = document.getElementById('dlgLoja');
   const urlLoja = `${location.origin}${location.pathname}?loja=${encodeURIComponent(l.id)}`;
+
+  const totalSacolaQtd = Object.values(est.sacola).reduce((s, r) => s + r.qtd, 0);
+  const totalSacolaValor = Object.values(est.sacola).reduce((s, r) => s + Number(r.item.price) * r.qtd, 0);
+  const rotuloSacola = totalSacolaQtd > 0
+    ? `Ver sacola (${totalSacolaQtd} · ${formatarPreco(totalSacolaValor)})`
+    : 'Ver sacola';
+
   dlgLoja.innerHTML = `
     <h3>${esc(l.name)}</h3>
     ${l.description ? `<p>${esc(l.description)}</p>` : ''}
@@ -224,7 +231,7 @@ function abrirLoja(id) {
     </div>
     <div class="acoes">
       <button type="button" id="btnQrLoja">QR Code da loja</button>
-      <button type="button" id="irSacola">Ver sacola</button>
+      <button type="button" id="irSacola">${rotuloSacola}</button>
       <button type="button" class="perigo" id="fecharLoja">Fechar</button>
     </div>`;
   if (!modal.open) modal.showModal();
