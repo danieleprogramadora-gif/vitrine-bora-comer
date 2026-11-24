@@ -210,7 +210,11 @@ function abrirLoja(id) {
   lojaAtual = l;
   const { itens, usandoDemo } = obterItensDaLoja(l);
   const modal = document.getElementById('modalLoja');
-  const dlgLoja = document.getElementById('dlgLoja');
+  const dlgLoja = document.getElementById('dlgLoja') || modal;
+  if (!dlgLoja) {
+    mostrarMensagem(`Loja selecionada: ${l.name}`);
+    return;
+  }
   const urlLoja = `${location.origin}${location.pathname}?loja=${encodeURIComponent(l.id)}`;
 
   const totalSacolaQtd = Object.values(est.sacola).reduce((s, r) => s + r.qtd, 0);
@@ -234,7 +238,7 @@ function abrirLoja(id) {
       <button type="button" id="irSacola">${rotuloSacola}</button>
       <button type="button" class="perigo" id="fecharLoja">Fechar</button>
     </div>`;
-  if (!modal.open) modal.showModal();
+  if (modal && typeof modal.showModal === 'function' && !modal.open) modal.showModal();
 
   dlgLoja.querySelectorAll('[data-qtd]').forEach(b => {
     b.addEventListener('click', () => {
@@ -242,12 +246,14 @@ function abrirLoja(id) {
       abrirLoja(l.id);
     });
   });
-  document.getElementById('btnQrLoja').addEventListener('click', () => abrirQr(`Cardápio · ${l.name}`, urlLoja));
-  document.getElementById('irSacola').addEventListener('click', () => {
-    modal.close();
+  document.getElementById('btnQrLoja')?.addEventListener('click', () => abrirQr(`Cardápio · ${l.name}`, urlLoja));
+  document.getElementById('irSacola')?.addEventListener('click', () => {
+    if (modal && typeof modal.close === 'function') modal.close();
     abrirSacola();
   });
-  document.getElementById('fecharLoja').addEventListener('click', () => modal.close());
+  document.getElementById('fecharLoja')?.addEventListener('click', () => {
+    if (modal && typeof modal.close === 'function') modal.close();
+  });
 }
 
 function alterarQtd(itemId, delta) {
@@ -275,11 +281,13 @@ function atualizarBadgeSacola() {
 
 function abrirSacola() {
   const entradas = Object.values(est.sacola);
-  const dlg = document.getElementById('dlgSacola');
+  const modal = document.getElementById('modalSacola');
+  const dlg = document.getElementById('dlgSacola') || modal;
+  if (!dlg) return;
   if (!entradas.length) {
     dlg.innerHTML = '<h3>Sua sacola está vazia</h3><p>Escolha itens no cardápio de alguma loja.</p><div class="acoes"><button type="button" id="fecharSac">Fechar</button></div>';
-    document.getElementById('modalSacola').showModal();
-    document.getElementById('fecharSac').addEventListener('click', () => document.getElementById('modalSacola').close());
+    if (modal && typeof modal.showModal === 'function' && !modal.open) modal.showModal();
+    document.getElementById('fecharSac')?.addEventListener('click', () => modal?.close?.());
     return;
   }
   const total = entradas.reduce((s, r) => s + Number(r.item.price) * r.qtd, 0);
@@ -297,37 +305,42 @@ function abrirSacola() {
       <button type="button" class="perigo" id="limparSac">Limpar</button>
       <button type="button" id="fecharSac">Fechar</button>
     </div>`;
-  document.getElementById('modalSacola').showModal();
-  document.getElementById('fecharSac').addEventListener('click', () => document.getElementById('modalSacola').close());
-  document.getElementById('limparSac').addEventListener('click', () => {
+  if (modal && typeof modal.showModal === 'function' && !modal.open) modal.showModal();
+  document.getElementById('fecharSac')?.addEventListener('click', () => modal?.close?.());
+  document.getElementById('limparSac')?.addEventListener('click', () => {
     est.sacola = {};
     atualizarBadgeSacola();
     abrirSacola();
   });
-  document.getElementById('btnZap').addEventListener('click', () => {
+  document.getElementById('btnZap')?.addEventListener('click', () => {
     const linhas = entradas.map(r => `• ${r.qtd}x ${r.item.name} (${formatarPreco(r.item.price * r.qtd)})`).join('%0A');
     const msg = `Olá! Gostaria de fazer um pedido:%0A${linhas}%0ATotal: ${encodeURIComponent(formatarPreco(total))}`;
     window.open(`https://wa.me/?text=${msg}`, '_blank', 'noopener');
   });
-  document.getElementById('btnSimular').addEventListener('click', () => {
+  document.getElementById('btnSimular')?.addEventListener('click', () => {
     const codigo = 'PED-' + Math.random().toString(36).slice(2, 7).toUpperCase();
     est.sacola = {};
     atualizarBadgeSacola();
-    document.getElementById('modalSacola').close();
+    modal?.close?.();
     abrirQr(`Pedido ${codigo} · ${formatarPreco(total)}`, `${location.origin}${location.pathname}?pedido=${codigo}`);
   });
 }
 
 function abrirQr(titulo, texto) {
-  const dlg = document.getElementById('dlgQr');
+  const modal = document.getElementById('modalQr');
+  const dlg = document.getElementById('dlgQr') || modal;
+  if (!dlg) return;
   dlg.innerHTML = `
     <h3>${esc(titulo)}</h3>
     <div id="qrCanvas"></div>
     <p class="qr-url">${esc(texto)}</p>
     <div class="acoes"><button type="button" id="fecharQr">Fechar</button></div>`;
-  new QRCode(document.getElementById('qrCanvas'), { text: texto, width: 196, height: 196 });
-  document.getElementById('modalQr').showModal();
-  document.getElementById('fecharQr').addEventListener('click', () => document.getElementById('modalQr').close());
+  const canvasEl = document.getElementById('qrCanvas');
+  if (canvasEl && typeof QRCode === 'function') {
+    new QRCode(canvasEl, { text: texto, width: 196, height: 196 });
+  }
+  if (modal && typeof modal.showModal === 'function' && !modal.open) modal.showModal();
+  document.getElementById('fecharQr')?.addEventListener('click', () => modal?.close?.());
 }
 
 document.getElementById('catStrip')?.addEventListener('click', e => {
